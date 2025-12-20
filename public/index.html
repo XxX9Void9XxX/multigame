@@ -6,22 +6,22 @@
 <style>
 body { margin:0; overflow:hidden; background:#111; }
 canvas { display:block; }
-#ui {
-  position:absolute;
-  top:10px;
-  left:10px;
-  color:white;
-  font-family:Arial;
-  background:rgba(0,0,0,0.5);
-  padding:6px 10px;
-  border-radius:6px;
-}
+#ui { position:absolute; top:10px; left:10px; color:white; font-family:Arial; background:rgba(0,0,0,0.5); padding:6px 10px; border-radius:6px; }
+#upgradeMenu { position:absolute; bottom:10px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.8); padding:10px 20px; border-radius:10px; display:none; }
+button.upgradeBtn { margin:5px; padding:5px 10px; border:none; border-radius:6px; background:linear-gradient(45deg,#9b59b6,#8e44ad); color:white; cursor:pointer; }
+#minimap { position:absolute; top:10px; right:10px; width:200px; height:200px; background:rgba(0,0,0,0.6); border-radius:10px; }
 </style>
 </head>
 <body>
-
 <div id="ui">WASD to move • Mouse to aim • Click to shoot</div>
+<div id="upgradeMenu">
+  <span>Choose Upgrade:</span><br>
+  <button class="upgradeBtn" onclick="upgrade('speed')">Speed</button>
+  <button class="upgradeBtn" onclick="upgrade('damage')">Damage</button>
+  <button class="upgradeBtn" onclick="upgrade('hp')">HP</button>
+</div>
 <canvas id="game"></canvas>
+<div id="minimap"></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -40,95 +40,85 @@ const socket = io();
 let keys = { w:false, a:false, s:false, d:false };
 let mouseAngle = 0;
 let cameraX = 0, cameraY = 0;
-let state = { players:{}, bullets:[] };
+let state = { players:{}, bullets:[], bots:[] };
 
-socket.emit("init", {
-  name: "Player" + Math.floor(Math.random()*1000),
-  color: "#"+Math.floor(Math.random()*16777215).toString(16)
-});
+socket.emit("init", { name:"Player"+Math.floor(Math.random()*1000), color:"#"+Math.floor(Math.random()*16777215).toString(16) });
 
-/* ✅ FIXED KEY HANDLING */
-addEventListener("keydown", e => {
-  const k = e.key.toLowerCase();
-  if (k in keys) keys[k] = true;
-});
+addEventListener("keydown", e => { const k = e.key.toLowerCase(); if(k in keys) keys[k]=true; });
+addEventListener("keyup", e => { const k = e.key.toLowerCase(); if(k in keys) keys[k]=false; });
+canvas.addEventListener("mousemove", e => { mouseAngle = Math.atan2(e.clientY-canvas.height/2, e.clientX-canvas.width/2); socket.emit("aim", mouseAngle); });
+canvas.addEventListener("mousedown", ()=>socket.emit("shoot"));
+setInterval(()=>socket.emit("keys",keys),1000/60);
 
-addEventListener("keyup", e => {
-  const k = e.key.toLowerCase();
-  if (k in keys) keys[k] = false;
-});
+socket.on("state", s=>state=s);
 
-canvas.addEventListener("mousemove", e => {
-  mouseAngle = Math.atan2(
-    e.clientY - canvas.height / 2,
-    e.clientX - canvas.width / 2
-  );
-  socket.emit("aim", mouseAngle);
-});
+function upgrade(type){ socket.emit("upgrade",type); document.getElementById('upgradeMenu').style.display='none'; }
 
-canvas.addEventListener("mousedown", () => {
-  socket.emit("shoot");
-});
+function drawMap(){ ctx.fillStyle="#222"; for(let x=0;x<5000;x+=50) ctx.fillRect(x-cameraX,-cameraY,1,5000); for(let y=0;y<5000;y+=50) ctx.fillRect(-cameraX,y-cameraY,5000,1); }
 
-setInterval(() => {
-  socket.emit("keys", keys);
-}, 1000 / 60);
-
-socket.on("state", s => {
-  state = s;
-});
-
-function drawMap() {
-  ctx.fillStyle = "#222";
-  for (let x = 0; x < 5000; x += 50)
-    ctx.fillRect(x - cameraX, -cameraY, 1, 5000);
-  for (let y = 0; y < 5000; y += 50)
-    ctx.fillRect(-cameraX, y - cameraY, 5000, 1);
-}
-
-function drawPlayer(p) {
+function drawPlayer(p){
   ctx.beginPath();
-  ctx.fillStyle = p.color;
-  ctx.arc(p.x - cameraX, p.y - cameraY, p.r, 0, Math.PI * 2);
+  ctx.fillStyle=p.color;
+  ctx.arc(p.x-cameraX,p.y-cameraY,p.r,0,Math.PI*2);
   ctx.fill();
-
   ctx.save();
-  ctx.translate(p.x - cameraX, p.y - cameraY);
+  ctx.translate(p.x-cameraX,p.y-cameraY);
   ctx.rotate(p.angle);
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, -4, 28, 8);
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,-4,28,8);
   ctx.restore();
+  ctx.fillStyle="white";
+  ctx.font="12px Arial";
+  ctx.textAlign="center";
+  ctx.fillText(p.name,p.x-cameraX,p.y-cameraY-p.r-8);
 
-  ctx.fillStyle = "white";
-  ctx.font = "12px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(p.name, p.x - cameraX, p.y - cameraY - p.r - 8);
+  // health bar
+  ctx.fillStyle="red";
+  ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r,4);
+  ctx.fillStyle="lime";
+  ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r*(p.hp/p.maxHp),4);
 }
 
-function loop() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+function drawLoop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
   drawMap();
 
   const me = state.players[socket.id];
-  if (me) {
-    cameraX = me.x - canvas.width / 2;
-    cameraY = me.y - canvas.height / 2;
-  }
+  if(me){ cameraX = me.x - canvas.width/2; cameraY = me.y - canvas.height/2; }
 
-  for (const id in state.players)
-    drawPlayer(state.players[id]);
+  for(const id in state.players) drawPlayer(state.players[id]);
+  state.bots.forEach(bot=>drawPlayer(bot));
 
-  ctx.fillStyle = "#ff0";
-  state.bullets.forEach(b => {
+  ctx.fillStyle="#ff0";
+  state.bullets.forEach(b=>{
     ctx.beginPath();
-    ctx.arc(b.x - cameraX, b.y - cameraY, 4, 0, Math.PI * 2);
+    ctx.arc(b.x-cameraX,b.y-cameraY,4,0,Math.PI*2);
     ctx.fill();
   });
 
-  requestAnimationFrame(loop);
+  drawMinimap();
+  requestAnimationFrame(drawLoop);
 }
+drawLoop();
 
-loop();
+/* MINIMAP */
+const minimap = document.getElementById('minimap');
+function drawMinimap(){
+  const mctx = minimap.getContext('2d') || (minimap.getContext('2d'));
+  mctx.clearRect(0,0,minimap.width,minimap.height);
+  const scaleX = minimap.width/5000;
+  const scaleY = minimap.height/5000;
+
+  for(const id in state.players){
+    const p = state.players[id];
+    mctx.fillStyle = (id===socket.id) ? 'lime' : 'red';
+    mctx.fillRect(p.x*scaleX, p.y*scaleY,4,4);
+  }
+  state.bots.forEach(bot=>{
+    mctx.fillStyle='blue';
+    mctx.fillRect(bot.x*scaleX, bot.y*scaleY,4,4);
+  });
+}
 </script>
 </body>
 </html>
