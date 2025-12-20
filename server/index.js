@@ -55,6 +55,8 @@ function createBot() {
 for(let i=0;i<15;i++) bots.push(createBot());
 
 io.on("connection", socket => {
+  console.log("connected:", socket.id);
+
   players[socket.id] = {
     id: socket.id,
     name: "Player" + Math.floor(Math.random()*1000),
@@ -76,24 +78,29 @@ io.on("connection", socket => {
     upgrades: { speed:0, damage:0, hp:0, bulletSpeed:0 }
   };
 
+  // send initial state so player can see itself immediately
+  socket.emit("init", { id: socket.id });
+
   socket.on("init", data => {
-    players[socket.id].name = data.name;
-    players[socket.id].color = data.color;
+    if(players[socket.id]){
+      players[socket.id].name = data.name;
+      players[socket.id].color = data.color;
+    }
   });
 
   socket.on("keys", keys => {
-    players[socket.id].inputs = keys;
+    if(players[socket.id]) players[socket.id].inputs = keys;
   });
 
   socket.on("aim", angle => {
-    players[socket.id].angle = angle;
+    if(players[socket.id]) players[socket.id].angle = angle;
   });
 
   socket.on("shoot", () => {
     const p = players[socket.id];
+    if(!p) return;
     const now = Date.now();
     if(now - p.lastShot < p.fireRate) return;
-
     bullets.push({
       x: p.x,
       y: p.y,
@@ -102,22 +109,24 @@ io.on("connection", socket => {
       damage: p.damage,
       life: 120
     });
-
     p.lastShot = now;
   });
 
   socket.on("upgrade", type => {
     const p = players[socket.id];
+    if(!p) return;
     if(type==="speed") p.speed += 0.5;
     else if(type==="damage") p.damage += 5;
     else if(type==="hp") { p.maxHp+=20; p.hp+=20; }
-    else if(type==="bulletSpeed") { /* can add if bullets have speed */ }
   });
 
-  socket.on("disconnect", () => delete players[socket.id]);
+  socket.on("disconnect", () => {
+    delete players[socket.id];
+  });
 });
 
 function movePlayer(p) {
+  if(!p) return;
   if(p.inputs.w) p.y -= p.speed;
   if(p.inputs.s) p.y += p.speed;
   if(p.inputs.a) p.x -= p.speed;
@@ -175,7 +184,6 @@ function moveBullets() {
           t.x = Math.random()*MAP_WIDTH;
           t.y = Math.random()*MAP_HEIGHT;
           if(t.type!=="AI"){
-            // XP gain for player who killed
             const killer = players[b.owner];
             if(killer){
               killer.xp += 3;
