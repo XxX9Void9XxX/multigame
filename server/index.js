@@ -215,4 +215,35 @@ function moveBullets() {
         if(owner && t.hp - b.damage <=0){
           owner.xp += 3;
           if(owner.xp >= owner.xpToLevel){
-            owner.level+
+            owner.level++;
+            owner.upgradePoints = (owner.upgradePoints || 0) + 1;
+            owner.xp -= owner.xpToLevel;
+            owner.xpToLevel = Math.floor(owner.xpToLevel*1.5);
+          }
+        }
+
+        // respawn entity
+        t.hp = t.maxHp;
+        t.x = Math.random()*MAP_WIDTH;
+        t.y = Math.random()*MAP_HEIGHT;
+
+        bullets.splice(i,1);
+        break;
+      }
+    }
+
+    if(b.life<=0) bullets.splice(i,1);
+  }
+}
+
+function loop() {
+  Object.values(players).forEach(movePlayer);
+  moveBots();
+  moveBullets();
+  io.emit("state",{players, bullets, bots});
+}
+
+setInterval(loop,1000/60);
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, ()=>console.log("Server running on", PORT));
