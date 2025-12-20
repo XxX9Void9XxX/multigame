@@ -20,47 +20,97 @@ button.upgradeBtn{margin:5px;padding:5px 10px;border:none;border-radius:6px;back
   <button class="upgradeBtn" onclick="upgrade('hp')">HP</button>
 </div>
 <canvas id="game"></canvas>
-<div id="minimap"></div>
+<canvas id="minimap"></canvas>
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const canvas=document.getElementById("game"), ctx=canvas.getContext("2d");
-function resize(){canvas.width=innerWidth;canvas.height=innerHeight;}
-resize();addEventListener("resize",resize);
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const minimap = document.getElementById('minimap');
+const mctx = minimap.getContext('2d');
 
-const socket=io();
+canvas.width = innerWidth;
+canvas.height = innerHeight;
+minimap.width = 200;
+minimap.height = 200;
+
+addEventListener('resize', ()=>{canvas.width=innerWidth;canvas.height=innerHeight;});
+
+const socket = io();
 let keys={w:false,a:false,s:false,d:false};
-let mouseAngle=0, cameraX=0, cameraY=0;
-let state={players:{},bullets:[],bots:[]};
+let mouseAngle=0;
+let cameraX=0,cameraY=0;
+let state={players:{},bots:[],bullets:[]};
 let myId=null;
 
-socket.on("init", data=>{myId=data.id;});
+socket.on('init', data => {myId=data.id;});
 
-socket.emit("init",{name:"Player"+Math.floor(Math.random()*1000),color:"#"+Math.floor(Math.random()*16777215).toString(16)});
+socket.emit('init',{name:'Player'+Math.floor(Math.random()*1000),color:'#'+Math.floor(Math.random()*16777215).toString(16)});
 
-addEventListener("keydown", e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=true;});
-addEventListener("keyup", e=>{const k=e.key.toLowerCase();if(k in keys)keys[k]=false;});
-canvas.addEventListener("mousemove", e=>{mouseAngle=Math.atan2(e.clientY-canvas.height/2,e.clientX-canvas.width/2);socket.emit("aim",mouseAngle);});
-canvas.addEventListener("mousedown",()=>socket.emit("shoot"));
-setInterval(()=>socket.emit("keys",keys),1000/60);
+addEventListener('keydown',e=>{if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()]=true;});
+addEventListener('keyup',e=>{if(e.key.toLowerCase() in keys) keys[e.key.toLowerCase()]=false;});
+canvas.addEventListener('mousemove',e=>{mouseAngle=Math.atan2(e.clientY-canvas.height/2,e.clientX-canvas.width/2); socket.emit('aim',mouseAngle);});
+canvas.addEventListener('mousedown',()=>socket.emit('shoot'));
+setInterval(()=>socket.emit('keys',keys),1000/60);
 
-socket.on("state", s=>state=s);
-function upgrade(type){socket.emit("upgrade",type);document.getElementById('upgradeMenu').style.display='none';}
+socket.on('state', s=>state=s);
 
-function drawMap(){ctx.fillStyle="#222";for(let x=0;x<5000;x+=50)ctx.fillRect(x-cameraX,-cameraY,1,5000);for(let y=0;y<5000;y+=50)ctx.fillRect(-cameraX,y-cameraY,5000,1);}
-function drawPlayer(p){ctx.beginPath();ctx.fillStyle=p.color;ctx.arc(p.x-cameraX,p.y-cameraY,p.r,0,Math.PI*2);ctx.fill();ctx.save();ctx.translate(p.x-cameraX,p.y-cameraY);ctx.rotate(p.angle);ctx.fillStyle="#fff";ctx.fillRect(0,-4,28,8);ctx.restore();ctx.fillStyle="white";ctx.font="12px Arial";ctx.textAlign="center";ctx.fillText(p.name,p.x-cameraX,p.y-cameraY-p.r-8);ctx.fillStyle="red";ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r,4);ctx.fillStyle="lime";ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r*(p.hp/p.maxHp),4);}
-function drawLoop(){ctx.clearRect(0,0,canvas.width,canvas.height);drawMap();const me=state.players[myId];if(me){cameraX=me.x-canvas.width/2;cameraY=me.y-canvas.height/2;}for(const id in state.players)drawPlayer(state.players[id]);state.bots.forEach(bot=>drawPlayer(bot));ctx.fillStyle="#ff0";state.bullets.forEach(b=>{ctx.beginPath();ctx.arc(b.x-cameraX,b.y-cameraY,4,0,Math.PI*2);ctx.fill();});drawMinimap();requestAnimationFrame(drawLoop);}
-drawLoop();
+function upgrade(type){socket.emit('upgrade',type);document.getElementById('upgradeMenu').style.display='none';}
 
-/* MINIMAP */
-const minimap=document.getElementById('minimap');
-function drawMinimap(){
-  const mctx=minimap.getContext('2d');
+function drawPlayer(p){
+  ctx.beginPath();
+  ctx.fillStyle = p.color;
+  ctx.arc(p.x-cameraX,p.y-cameraY,p.r,0,Math.PI*2);
+  ctx.fill();
+  ctx.save();
+  ctx.translate(p.x-cameraX,p.y-cameraY);
+  ctx.rotate(p.angle);
+  ctx.fillStyle='#fff';
+  ctx.fillRect(0,-4,28,8);
+  ctx.restore();
+  ctx.fillStyle='white';
+  ctx.font='12px Arial';
+  ctx.textAlign='center';
+  ctx.fillText(p.name,p.x-cameraX,p.y-cameraY-p.r-8);
+  ctx.fillStyle='red';
+  ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r,4);
+  ctx.fillStyle='lime';
+  ctx.fillRect(p.x-cameraX-p.r,p.y-cameraY-p.r-12,2*p.r*(p.hp/p.maxHp),4);
+}
+
+function drawLoop(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // map grid
+  ctx.fillStyle="#222";
+  for(let x=0;x<5000;x+=50) ctx.fillRect(x-cameraX,0-cameraY,1,5000);
+  for(let y=0;y<5000;y+=50) ctx.fillRect(0-cameraX,y-cameraY,5000,1);
+
+  const me = state.players[myId];
+  if(me){ cameraX=me.x-canvas.width/2; cameraY=me.y-canvas.height/2;}
+
+  for(const id in state.players) drawPlayer(state.players[id]);
+  state.bots.forEach(drawPlayer);
+
+  ctx.fillStyle='#ff0';
+  state.bullets.forEach(b=>{
+    ctx.beginPath();
+    ctx.arc(b.x-cameraX,b.y-cameraY,4,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // minimap
   mctx.clearRect(0,0,minimap.width,minimap.height);
   const scaleX=minimap.width/5000;
   const scaleY=minimap.height/5000;
-  for(const id in state.players){const p=state.players[id];mctx.fillStyle=(id===myId)?'lime':'red';mctx.fillRect(p.x*scaleX,p.y*scaleY,4,4);}
-  state.bots.forEach(bot=>{mctx.fillStyle='blue';mctx.fillRect(bot.x*scaleX,bot.y*scaleY,4,4);});
+  for(const id in state.players){
+    const p = state.players[id];
+    mctx.fillStyle=(id===myId)?'lime':'red';
+    mctx.fillRect(p.x*scaleX,p.y*scaleY,4,4);
+  }
+  state.bots.forEach(b=>{mctx.fillStyle='blue'; mctx.fillRect(b.x*scaleX,b.y*scaleY,4,4);});
+
+  requestAnimationFrame(drawLoop);
 }
+drawLoop();
 </script>
 </body>
 </html>
