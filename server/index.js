@@ -25,11 +25,9 @@ const BOT_NAMES = ["Echo","Vortex","Nova","Phantom","Spectre","Rift","Pulse","Bl
 function randomBotName() {
   return BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)] + Math.floor(Math.random()*1000);
 }
-
 function randomColor() {
   return "#" + Math.floor(Math.random()*16777215).toString(16);
 }
-
 function createBot() {
   return {
     id: "bot_" + Math.random(),
@@ -42,8 +40,8 @@ function createBot() {
     hp: 100,
     maxHp: 100,
     speed: 2,
-    damage: 10,
-    fireRate: 800,
+    damage: 5,
+    fireRate: 1000,
     lastShot: 0,
     type: "AI",
     xp: 0,
@@ -55,7 +53,6 @@ function createBot() {
   };
 }
 
-// spawn 15 bots initially
 for(let i=0;i<15;i++) bots.push(createBot());
 
 io.on("connection", socket => {
@@ -72,13 +69,13 @@ io.on("connection", socket => {
     hp: 150,
     maxHp: 150,
     speed: 3,
-    damage: 15,
+    damage: 8,
     fireRate: 300,
     lastShot: 0,
     inputs: { w:false, a:false, s:false, d:false },
     xp: 0,
     level: 1,
-    xpToLevel: 5,
+    xpToLevel: 10,
     upgradePoints: 0
   };
 
@@ -117,87 +114,60 @@ io.on("connection", socket => {
 
   socket.on("upgrade", type => {
     const p = players[socket.id];
-    if(!p || p.upgradePoints<=0) return;
+    if(!p || p.upgradePoints <=0) return;
     p.upgradePoints--;
     if(type==="speed") p.speed += 0.5;
-    else if(type==="damage") p.damage += 5;
-    else if(type==="hp") { p.maxHp+=20; p.hp+=20; }
+    else if(type==="damage") p.damage += 2;
+    else if(type==="hp") { p.maxHp += 20; p.hp += 20; }
   });
 
-  socket.on("disconnect", () => {
-    delete players[socket.id];
-  });
+  socket.on("disconnect", () => { delete players[socket.id]; });
 });
 
-function movePlayer(p) {
+// ---------- Movement ----------
+function movePlayer(p){
   if(!p) return;
   if(p.inputs.w) p.y -= p.speed;
   if(p.inputs.s) p.y += p.speed;
   if(p.inputs.a) p.x -= p.speed;
   if(p.inputs.d) p.x += p.speed;
-
   p.x = Math.max(p.r, Math.min(MAP_WIDTH - p.r, p.x));
   p.y = Math.max(p.r, Math.min(MAP_HEIGHT - p.r, p.y));
 }
 
-function moveBots() {
+function moveBots(){
   const allEntities = Object.values(players).concat(bots);
-
-  bots.forEach(bot => {
-    // find closest target (player or AI) within vision distance
-    let target = null;
+  bots.forEach(bot=>{
+    let target=null;
     let minDist = VISION_DISTANCE;
-
     for(const e of allEntities){
       if(e.id === bot.id) continue;
-      const dist = Math.hypot(bot.x - e.x, bot.y - e.y);
-      if(dist < minDist){
-        minDist = dist;
-        target = e;
-      }
+      const dist = Math.hypot(bot.x-e.x, bot.y-e.y);
+      if(dist < minDist){ minDist = dist; target = e; }
     }
 
     if(target){
-      // move toward target
-      const dx = target.x - bot.x;
-      const dy = target.y - bot.y;
+      const dx = target.x-bot.x, dy = target.y-bot.y;
       const dist = Math.hypot(dx, dy);
-      if(dist > 0){
-        bot.x += dx/dist * bot.speed;
-        bot.y += dy/dist * bot.speed;
-        bot.angle = Math.atan2(dy, dx);
-      }
-
-      // shoot at target
+      if(dist>0){ bot.x += dx/dist*bot.speed; bot.y += dy/dist*bot.speed; bot.angle=Math.atan2(dy,dx);}
       const now = Date.now();
-      if(now - bot.lastShot > bot.fireRate){
-        bullets.push({
-          x: bot.x,
-          y: bot.y,
-          angle: bot.angle,
-          owner: bot.id,
-          damage: bot.damage,
-          life: 120
-        });
+      if(now-bot.lastShot > bot.fireRate){
+        bullets.push({ x: bot.x, y: bot.y, angle: bot.angle, owner: bot.id, damage: bot.damage, life:120 });
         bot.lastShot = now;
       }
-
     } else {
-      // wander randomly
-      if(bot.wanderTime <=0){
-        bot.wanderDir = Math.random() * Math.PI * 2;
-        bot.wanderTime = 60 + Math.random()*120;
-      } else bot.wanderTime--;
-      bot.x += Math.cos(bot.wanderDir) * bot.speed;
-      bot.y += Math.sin(bot.wanderDir) * bot.speed;
-
-      bot.x = Math.max(bot.r, Math.min(MAP_WIDTH - bot.r, bot.x));
-      bot.y = Math.max(bot.r, Math.min(MAP_HEIGHT - bot.r, bot.y));
+      if(bot.wanderTime<=0){ bot.wanderDir = Math.random()*Math.PI*2; bot.wanderTime=60+Math.random()*120;}
+      else bot.wanderTime--;
+      bot.x += Math.cos(bot.wanderDir)*bot.speed;
+      bot.y += Math.sin(bot.wanderDir)*bot.speed;
+      bot.x = Math.max(bot.r, Math.min(MAP_WIDTH-bot.r, bot.x));
+      bot.y = Math.max(bot.r, Math.min(MAP_HEIGHT-bot.r, bot.y));
     }
   });
 }
 
-function moveBullets() {
+// ---------- Bullets ----------
+function moveBullets(){
   const allEntities = Object.values(players).concat(bots);
   for(let i=bullets.length-1;i>=0;i--){
     const b = bullets[i];
@@ -207,22 +177,20 @@ function moveBullets() {
 
     for(const t of allEntities){
       if(t.id === b.owner) continue;
-      if(Math.hypot(b.x - t.x, b.y - t.y) < t.r){
+      if(Math.hypot(b.x-t.x,b.y-t.y) < t.r){
         t.hp -= b.damage;
 
-        // award XP to owner
         const owner = players[b.owner] || bots.find(bot=>bot.id===b.owner);
-        if(owner && t.hp - b.damage <=0){
+        if(owner && t.hp-b.damage <=0){
           owner.xp += 3;
           if(owner.xp >= owner.xpToLevel){
             owner.level++;
-            owner.upgradePoints = (owner.upgradePoints || 0) + 1;
+            owner.upgradePoints = (owner.upgradePoints || 0)+1;
             owner.xp -= owner.xpToLevel;
             owner.xpToLevel = Math.floor(owner.xpToLevel*1.5);
           }
         }
 
-        // respawn entity
         t.hp = t.maxHp;
         t.x = Math.random()*MAP_WIDTH;
         t.y = Math.random()*MAP_HEIGHT;
@@ -236,7 +204,8 @@ function moveBullets() {
   }
 }
 
-function loop() {
+// ---------- Game loop ----------
+function loop(){
   Object.values(players).forEach(movePlayer);
   moveBots();
   moveBullets();
