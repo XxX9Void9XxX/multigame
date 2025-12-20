@@ -15,6 +15,7 @@ app.use(express.static(path.join(__dirname, "../public")));
 
 const MAP_WIDTH = 5000;
 const MAP_HEIGHT = 5000;
+const VISION_DISTANCE = 400;
 
 const players = {};
 const bullets = [];
@@ -47,7 +48,10 @@ function createBot() {
     type: "AI",
     xp: 0,
     level: 1,
-    xpToLevel: 5
+    xpToLevel: 5,
+    upgradePoints: 0,
+    wanderDir: Math.random() * Math.PI * 2,
+    wanderTime: 0
   };
 }
 
@@ -75,10 +79,9 @@ io.on("connection", socket => {
     xp: 0,
     level: 1,
     xpToLevel: 5,
-    upgrades: { speed:0, damage:0, hp:0, bulletSpeed:0 }
+    upgradePoints: 0
   };
 
-  // send initial state so player can see itself immediately
   socket.emit("init", { id: socket.id });
 
   socket.on("init", data => {
@@ -114,7 +117,8 @@ io.on("connection", socket => {
 
   socket.on("upgrade", type => {
     const p = players[socket.id];
-    if(!p) return;
+    if(!p || p.upgradePoints<=0) return;
+    p.upgradePoints--;
     if(type==="speed") p.speed += 0.5;
     else if(type==="damage") p.damage += 5;
     else if(type==="hp") { p.maxHp+=20; p.hp+=20; }
@@ -137,80 +141,78 @@ function movePlayer(p) {
 }
 
 function moveBots() {
+  const allEntities = Object.values(players).concat(bots);
+
   bots.forEach(bot => {
-    let targets = Object.values(players);
-    if(targets.length===0) return;
-    let target = targets[Math.floor(Math.random()*targets.length)];
-    let dx = target.x - bot.x;
-    let dy = target.y - bot.y;
-    let dist = Math.hypot(dx, dy);
-    if(dist>0){
-      bot.x += dx/dist * bot.speed;
-      bot.y += dy/dist * bot.speed;
-      bot.angle = Math.atan2(dy, dx);
+    // find closest target (player or AI) within vision distance
+    let target = null;
+    let minDist = VISION_DISTANCE;
+
+    for(const e of allEntities){
+      if(e.id === bot.id) continue;
+      const dist = Math.hypot(bot.x - e.x, bot.y - e.y);
+      if(dist < minDist){
+        minDist = dist;
+        target = e;
+      }
     }
 
-    const now = Date.now();
-    if(now - bot.lastShot > bot.fireRate){
-      bullets.push({
-        x: bot.x,
-        y: bot.y,
-        angle: bot.angle,
-        owner: bot.id,
-        damage: bot.damage,
-        life: 120
-      });
-      bot.lastShot = now;
+    if(target){
+      // move toward target
+      const dx = target.x - bot.x;
+      const dy = target.y - bot.y;
+      const dist = Math.hypot(dx, dy);
+      if(dist > 0){
+        bot.x += dx/dist * bot.speed;
+        bot.y += dy/dist * bot.speed;
+        bot.angle = Math.atan2(dy, dx);
+      }
+
+      // shoot at target
+      const now = Date.now();
+      if(now - bot.lastShot > bot.fireRate){
+        bullets.push({
+          x: bot.x,
+          y: bot.y,
+          angle: bot.angle,
+          owner: bot.id,
+          damage: bot.damage,
+          life: 120
+        });
+        bot.lastShot = now;
+      }
+
+    } else {
+      // wander randomly
+      if(bot.wanderTime <=0){
+        bot.wanderDir = Math.random() * Math.PI * 2;
+        bot.wanderTime = 60 + Math.random()*120;
+      } else bot.wanderTime--;
+      bot.x += Math.cos(bot.wanderDir) * bot.speed;
+      bot.y += Math.sin(bot.wanderDir) * bot.speed;
+
+      bot.x = Math.max(bot.r, Math.min(MAP_WIDTH - bot.r, bot.x));
+      bot.y = Math.max(bot.r, Math.min(MAP_HEIGHT - bot.r, bot.y));
     }
   });
 }
 
 function moveBullets() {
+  const allEntities = Object.values(players).concat(bots);
   for(let i=bullets.length-1;i>=0;i--){
     const b = bullets[i];
     b.x += Math.cos(b.angle)*8;
     b.y += Math.sin(b.angle)*8;
     b.life--;
 
-    // check collisions
-    let targets = Object.values(players).concat(bots);
-    for(const t of targets){
+    for(const t of allEntities){
       if(t.id === b.owner) continue;
       if(Math.hypot(b.x - t.x, b.y - t.y) < t.r){
         t.hp -= b.damage;
-        bullets.splice(i,1);
-        if(t.hp <=0){
-          t.hp = t.maxHp;
-          t.x = Math.random()*MAP_WIDTH;
-          t.y = Math.random()*MAP_HEIGHT;
-          if(t.type!=="AI"){
-            const killer = players[b.owner];
-            if(killer){
-              killer.xp += 3;
-              if(killer.xp>=killer.xpToLevel){
-                killer.level++;
-                killer.xp -= killer.xpToLevel;
-                killer.xpToLevel = Math.floor(killer.xpToLevel*1.5);
-              }
-            }
-          }
-        }
-        break;
-      }
-    }
 
-    if(b.life<=0) bullets.splice(i,1);
-  }
-}
-
-function loop() {
-  Object.values(players).forEach(movePlayer);
-  moveBots();
-  moveBullets();
-  io.emit("state", { players, bullets, bots });
-}
-
-setInterval(loop, 1000/60);
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, ()=>console.log("Server running on", PORT));
+        // award XP to owner
+        const owner = players[b.owner] || bots.find(bot=>bot.id===b.owner);
+        if(owner && t.hp - b.damage <=0){
+          owner.xp += 3;
+          if(owner.xp >= owner.xpToLevel){
+            owner.level+
