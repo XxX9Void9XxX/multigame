@@ -22,12 +22,15 @@ const bullets = [];
 const bots = [];
 const BOT_NAMES = ["Echo","Vortex","Nova","Phantom","Spectre","Rift","Pulse","Blaze","Zero","Aether","Shadow"];
 
+// ----- Helpers -----
 function randomBotName() {
   return BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)] + Math.floor(Math.random()*1000);
 }
+
 function randomColor() {
   return "#" + Math.floor(Math.random()*16777215).toString(16);
 }
+
 function createBot() {
   return {
     id: "bot_" + Math.random(),
@@ -46,15 +49,17 @@ function createBot() {
     type: "AI",
     xp: 0,
     level: 1,
-    xpToLevel: 5,
+    xpToLevel: 10,
     upgradePoints: 0,
     wanderDir: Math.random() * Math.PI * 2,
     wanderTime: 0
   };
 }
 
+// Spawn initial bots
 for(let i=0;i<15;i++) bots.push(createBot());
 
+// ----- Socket Handling -----
 io.on("connection", socket => {
   console.log("connected:", socket.id);
 
@@ -124,7 +129,7 @@ io.on("connection", socket => {
   socket.on("disconnect", () => { delete players[socket.id]; });
 });
 
-// ---------- Movement ----------
+// ----- Movement -----
 function movePlayer(p){
   if(!p) return;
   if(p.inputs.w) p.y -= p.speed;
@@ -135,6 +140,7 @@ function movePlayer(p){
   p.y = Math.max(p.r, Math.min(MAP_HEIGHT - p.r, p.y));
 }
 
+// ----- Bots -----
 function moveBots(){
   const allEntities = Object.values(players).concat(bots);
   bots.forEach(bot=>{
@@ -166,7 +172,7 @@ function moveBots(){
   });
 }
 
-// ---------- Bullets ----------
+// ----- Bullets & Damage Handling -----
 function moveBullets(){
   const allEntities = Object.values(players).concat(bots);
   for(let i=bullets.length-1;i>=0;i--){
@@ -178,22 +184,25 @@ function moveBullets(){
     for(const t of allEntities){
       if(t.id === b.owner) continue;
       if(Math.hypot(b.x-t.x,b.y-t.y) < t.r){
-        t.hp -= b.damage;
+        t.hp -= b.damage; // subtract damage
 
         const owner = players[b.owner] || bots.find(bot=>bot.id===b.owner);
-        if(owner && t.hp-b.damage <=0){
-          owner.xp += 3;
-          if(owner.xp >= owner.xpToLevel){
-            owner.level++;
-            owner.upgradePoints = (owner.upgradePoints || 0)+1;
-            owner.xp -= owner.xpToLevel;
-            owner.xpToLevel = Math.floor(owner.xpToLevel*1.5);
-          }
-        }
 
-        t.hp = t.maxHp;
-        t.x = Math.random()*MAP_WIDTH;
-        t.y = Math.random()*MAP_HEIGHT;
+        // only respawn if HP <= 0
+        if(t.hp <=0){
+          if(owner){
+            owner.xp += 3;
+            if(owner.xp >= owner.xpToLevel){
+              owner.level++;
+              owner.upgradePoints = (owner.upgradePoints || 0)+1;
+              owner.xp -= owner.xpToLevel;
+              owner.xpToLevel = Math.floor(owner.xpToLevel*1.5);
+            }
+          }
+          t.hp = t.maxHp;
+          t.x = Math.random()*MAP_WIDTH;
+          t.y = Math.random()*MAP_HEIGHT;
+        }
 
         bullets.splice(i,1);
         break;
@@ -204,7 +213,7 @@ function moveBullets(){
   }
 }
 
-// ---------- Game loop ----------
+// ----- Game Loop -----
 function loop(){
   Object.values(players).forEach(movePlayer);
   moveBots();
