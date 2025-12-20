@@ -1,12 +1,17 @@
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-app.use(express.static("../public"));
+app.use(express.static(path.join(__dirname, "../public")));
 
 const MAP_WIDTH = 5000;
 const MAP_HEIGHT = 5000;
@@ -27,9 +32,9 @@ io.on("connection", socket => {
     maxHp: 150,
     speed: 3,
     damage: 15,
-    fireRate: 400,
+    fireRate: 300,
     lastShot: 0,
-    inputs: { w: false, a: false, s: false, d: false }
+    inputs: { w:false, a:false, s:false, d:false }
   };
 
   socket.on("init", data => {
@@ -68,16 +73,17 @@ io.on("connection", socket => {
 });
 
 function loop() {
-  // move players
   for (const id in players) {
     const p = players[id];
     if (p.inputs.w) p.y -= p.speed;
     if (p.inputs.s) p.y += p.speed;
     if (p.inputs.a) p.x -= p.speed;
     if (p.inputs.d) p.x += p.speed;
+
+    p.x = Math.max(p.r, Math.min(MAP_WIDTH - p.r, p.x));
+    p.y = Math.max(p.r, Math.min(MAP_HEIGHT - p.r, p.y));
   }
 
-  // move bullets + collisions
   for (let i = bullets.length - 1; i >= 0; i--) {
     const b = bullets[i];
     b.x += Math.cos(b.angle) * 8;
@@ -87,8 +93,7 @@ function loop() {
     for (const id in players) {
       if (id === b.owner) continue;
       const p = players[id];
-      const d = Math.hypot(b.x - p.x, b.y - p.y);
-      if (d < p.r) {
+      if (Math.hypot(b.x - p.x, b.y - p.y) < p.r) {
         p.hp -= b.damage;
         bullets.splice(i, 1);
         if (p.hp <= 0) {
@@ -108,4 +113,5 @@ function loop() {
 
 setInterval(loop, 1000 / 60);
 
-server.listen(3000, () => console.log("Server running"));
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log("Server running on", PORT));
