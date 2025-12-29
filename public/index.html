@@ -2,35 +2,15 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Multiplayer Copter.io</title>
+<title>Copter.io Clone</title>
 <style>
-body { margin:0; overflow:hidden; background:#111; color:white; font-family:Arial; }
-canvas { display:block; }
-
-#ui {
-  position:fixed;
-  top:10px;
-  left:10px;
-  width:200px;
-}
-
-#xpBar {
-  width:100%;
-  height:10px;
-  background:#333;
-  border-radius:5px;
-  overflow:hidden;
-}
-#xpFill {
-  height:100%;
-  width:0%;
-  background:#0f0;
-}
-
-#upgrades button {
-  margin:4px 2px;
-  width:100%;
-}
+body{margin:0;overflow:hidden;background:#111;color:white;font-family:Arial}
+canvas{display:block}
+#ui{position:fixed;top:10px;left:10px;width:200px}
+#xpBar{height:10px;background:#333}
+#xpFill{height:100%;width:0;background:#0f0}
+#starter{position:fixed;inset:0;background:rgba(0,0,0,.85);display:flex;gap:10px;align-items:center;justify-content:center}
+#minimap{position:fixed;top:10px;right:10px;width:160px;height:160px;border:2px solid #555}
 </style>
 </head>
 <body>
@@ -44,10 +24,19 @@ canvas { display:block; }
     <button onclick="upgrade('damage')">Damage</button>
     <button onclick="upgrade('firerate')">Fire Rate</button>
     <button onclick="upgrade('speed')">Speed</button>
-    <button onclick="upgrade('bullet')">Bullet Speed</button>
+    <button onclick="upgrade('bullet')">Bullet</button>
     <button onclick="upgrade('hp')">HP</button>
   </div>
 </div>
+
+<div id="starter">
+  <button onclick="chooseStarter('tank')">Tank</button>
+  <button onclick="chooseStarter('sniper')">Sniper</button>
+  <button onclick="chooseStarter('speed')">Speed</button>
+  <button onclick="chooseStarter('rapid')">Rapid</button>
+</div>
+
+<canvas id="minimap"></canvas>
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="client.js"></script>
