@@ -1,125 +1,66 @@
-const socket = io();
+const socket=io();
+const c=document.getElementById("c"),ctx=c.getContext("2d");
+const mini=document.getElementById("minimap"),mctx=mini.getContext("2d");
 
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
+c.width=innerWidth;c.height=innerHeight;
+mini.width=160;mini.height=160;
 
-canvas.width = innerWidth;
-canvas.height = innerHeight;
-window.onresize = () => {
-  canvas.width = innerWidth;
-  canvas.height = innerHeight;
-};
+let myId=null,keys={},mouse={x:0,y:0};
+const MAP_W=5000,MAP_H=5000;
 
-let myId = null;
-let keys = {};
-let mouse = { x: 0, y: 0 };
+socket.on("init",d=>myId=d.id);
 
-socket.on("init", data => {
-  myId = data.id;
-});
+document.addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+c.addEventListener("mousemove",e=>{mouse.x=e.clientX;mouse.y=e.clientY});
+c.addEventListener("mousedown",()=>socket.emit("shoot"));
 
-/* ===== INPUT ===== */
-document.addEventListener("keydown", e => {
-  keys[e.key.toLowerCase()] = true;
-});
-document.addEventListener("keyup", e => {
-  keys[e.key.toLowerCase()] = false;
-});
+setInterval(()=>socket.emit("keys",keys),1000/60);
 
-canvas.addEventListener("mousemove", e => {
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-});
+function chooseStarter(t){socket.emit("starter",t);starter.style.display="none";}
+function upgrade(t){socket.emit("upgrade",t);}
 
-canvas.addEventListener("mousedown", () => {
-  socket.emit("shoot");
-});
+function drawGrid(cx,cy){
+  ctx.strokeStyle="#222";
+  for(let x=-cx%50;x<c.width;x+=50){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,c.height);ctx.stroke();}
+  for(let y=-cy%50;y<c.height;y+=50){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(c.width,y);ctx.stroke();}
+}
 
-/* Send movement keys */
-setInterval(() => {
-  socket.emit("keys", {
-    w: keys.w,
-    a: keys.a,
-    s: keys.s,
-    d: keys.d
+socket.on("state",state=>{
+  const me=state.players[myId];
+  if(!me) return;
+
+  const cx=me.x-c.width/2,cy=me.y-c.height/2;
+  ctx.clearRect(0,0,c.width,c.height);
+  drawGrid(cx,cy);
+
+  socket.emit("aim",Math.atan2(mouse.y-c.height/2,mouse.x-c.width/2));
+
+  levelText.innerText="Lvl "+me.level;
+  xpFill.style.width=(me.xp/me.xpToLevel*100)+"%";
+  upgrades.style.display=me.upgradePoints>0?"block":"none";
+
+  const draw=e=>{
+    const x=e.x-cx,y=e.y-cy;
+    ctx.fillStyle=e.color;ctx.beginPath();ctx.arc(x,y,22,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.fillText(e.name||"AI",x,y-28);
+    ctx.fillStyle="#400";ctx.fillRect(x-22,y-18,44,6);
+    ctx.fillStyle="#0f0";ctx.fillRect(x-22,y-18,44*(e.hp/e.maxHp),6);
+  };
+
+  Object.values(state.players).forEach(draw);
+  state.bots.forEach(draw);
+
+  state.bullets.forEach(b=>{
+    ctx.fillStyle="#ff0";ctx.beginPath();
+    ctx.arc(b.x-cx,b.y-cy,4,0,Math.PI*2);ctx.fill();
   });
-}, 1000 / 60);
 
-/* ===== AIM FIX (THIS IS WHAT YOU WERE MISSING) ===== */
-function sendAim(me) {
-  const dx = mouse.x - canvas.width / 2;
-  const dy = mouse.y - canvas.height / 2;
-  const angle = Math.atan2(dy, dx);
-  socket.emit("aim", angle);
-}
-
-/* ===== UPGRADES ===== */
-function upgrade(type) {
-  socket.emit("upgrade", type);
-}
-
-/* ===== DRAW LOOP ===== */
-socket.on("state", state => {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  const me = state.players[myId];
-  if (!me) return;
-
-  /* Camera */
-  const camX = me.x - canvas.width / 2;
-  const camY = me.y - canvas.height / 2;
-
-  /* Send aim every frame */
-  sendAim(me);
-
-  /* ===== UI ===== */
-  document.getElementById("levelText").innerText = "Lvl " + me.level;
-  document.getElementById("xpFill").style.width =
-    (me.xp / me.xpToLevel * 100) + "%";
-  document.getElementById("upgrades").style.display =
-    me.upgradePoints > 0 ? "block" : "none";
-
-  /* ===== DRAW PLAYERS ===== */
-  for (const id in state.players) {
-    const p = state.players[id];
-    drawEntity(p, camX, camY);
-  }
-
-  /* ===== DRAW BOTS ===== */
-  state.bots.forEach(b => drawEntity(b, camX, camY));
-
-  /* ===== DRAW BULLETS ===== */
-  state.bullets.forEach(b => {
-    ctx.beginPath();
-    ctx.fillStyle = "#ff0";
-    ctx.arc(b.x - camX, b.y - camY, 4, 0, Math.PI * 2);
-    ctx.fill();
+  mctx.clearRect(0,0,160,160);
+  const sx=160/MAP_W,sy=160/MAP_H;
+  state.bots.forEach(b=>{mctx.fillStyle="#f00";mctx.fillRect(b.x*sx,b.y*sy,3,3)});
+  Object.values(state.players).forEach(p=>{
+    mctx.fillStyle=p.id===myId?"#0f0":"#00f";
+    mctx.fillRect(p.x*sx,p.y*sy,4,4);
   });
 });
-
-/* ===== ENTITY DRAWING (NAME + HP BAR) ===== */
-function drawEntity(e, camX, camY) {
-  const x = e.x - camX;
-  const y = e.y - camY;
-
-  /* Body */
-  ctx.beginPath();
-  ctx.fillStyle = e.color;
-  ctx.arc(x, y, e.r || 22, 0, Math.PI * 2);
-  ctx.fill();
-
-  /* Name */
-  ctx.fillStyle = "#fff";
-  ctx.font = "12px Arial";
-  ctx.textAlign = "center";
-  ctx.fillText(e.name || "AI", x, y - 28);
-
-  /* Health bar background */
-  ctx.fillStyle = "#400";
-  ctx.fillRect(x - 22, y - 20, 44, 6);
-
-  /* Health bar fill */
-  const hpPercent = Math.max(0, e.hp / e.maxHp);
-  ctx.fillStyle = "#0f0";
-  ctx.fillRect(x - 22, y - 20, 44 * hpPercent, 6);
-}
