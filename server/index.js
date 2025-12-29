@@ -13,215 +13,162 @@ const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, "../public")));
 
-const MAP_WIDTH = 5000;
-const MAP_HEIGHT = 5000;
-const VISION_DISTANCE = 400;
+const MAP_W = 5000;
+const MAP_H = 5000;
+const VISION = 450;
 
 const players = {};
-const bullets = [];
 const bots = [];
-const BOT_NAMES = ["Echo","Vortex","Nova","Phantom","Spectre","Rift","Pulse","Blaze","Zero","Aether","Shadow"];
+const bullets = [];
 
-// ----- Helpers -----
-function randomBotName() {
+const BOT_NAMES = ["Echo","Nova","Rift","Vortex","Pulse","Shadow","Aether"];
+
+function randName(){
   return BOT_NAMES[Math.floor(Math.random()*BOT_NAMES.length)] + Math.floor(Math.random()*1000);
 }
 
-function randomColor() {
-  return "#" + Math.floor(Math.random()*16777215).toString(16);
-}
-
-function createBot() {
+function newBot(){
   return {
-    id: "bot_" + Math.random(),
-    name: randomBotName(),
-    color: randomColor(),
-    x: Math.random() * MAP_WIDTH,
-    y: Math.random() * MAP_HEIGHT,
-    r: 22,
-    angle: 0,
-    hp: 100,
-    maxHp: 100,
-    speed: 2,
-    damage: 5,
-    fireRate: 1000,
-    lastShot: 0,
-    type: "AI",
-    xp: 0,
-    level: 1,
-    xpToLevel: 10,
-    upgradePoints: 0,
-    wanderDir: Math.random() * Math.PI * 2,
-    wanderTime: 0
+    id:"bot_"+Math.random(),
+    name:randName(),
+    color:"#"+Math.floor(Math.random()*16777215).toString(16),
+    x:Math.random()*MAP_W,
+    y:Math.random()*MAP_H,
+    r:22,
+
+    hp:120,maxHp:120,
+    speed:2,damage:6,bulletSpeed:7,fireRate:900,lastShot:0,
+    xp:0,level:1,xpToLevel:15,upgradePoints:0,
+
+    wanderDir:Math.random()*Math.PI*2,wanderTime:0
   };
 }
 
-// Spawn initial bots
-for(let i=0;i<15;i++) bots.push(createBot());
+for(let i=0;i<15;i++) bots.push(newBot());
 
-// ----- Socket Handling -----
-io.on("connection", socket => {
-  console.log("connected:", socket.id);
+io.on("connection",socket=>{
+  players[socket.id]={
+    id:socket.id,
+    name:"Player",
+    color:"#00ff00",
+    x:Math.random()*MAP_W,
+    y:Math.random()*MAP_H,
+    r:22,
 
-  players[socket.id] = {
-    id: socket.id,
-    name: "Player" + Math.floor(Math.random()*1000),
-    color: "#"+Math.floor(Math.random()*16777215).toString(16),
-    x: Math.random() * MAP_WIDTH,
-    y: Math.random() * MAP_HEIGHT,
-    r: 22,
-    angle: 0,
-    hp: 150,
-    maxHp: 150,
-    speed: 3,
-    damage: 8,
-    fireRate: 300,
-    lastShot: 0,
-    inputs: { w:false, a:false, s:false, d:false },
-    xp: 0,
-    level: 1,
-    xpToLevel: 10,
-    upgradePoints: 0
+    hp:150,maxHp:150,
+    speed:3,damage:8,bulletSpeed:8,fireRate:350,lastShot:0,
+
+    angle:0,
+    inputs:{w:false,a:false,s:false,d:false},
+
+    xp:0,level:1,xpToLevel:15,upgradePoints:0,
+    starterChosen:false
   };
 
-  socket.emit("init", { id: socket.id });
+  socket.emit("init",{id:socket.id});
 
-  socket.on("init", data => {
-    if(players[socket.id]){
-      players[socket.id].name = data.name;
-      players[socket.id].color = data.color;
-    }
-  });
+  socket.on("keys",k=>players[socket.id].inputs=k);
+  socket.on("aim",a=>players[socket.id].angle=a);
 
-  socket.on("keys", keys => {
-    if(players[socket.id]) players[socket.id].inputs = keys;
-  });
-
-  socket.on("aim", angle => {
-    if(players[socket.id]) players[socket.id].angle = angle;
-  });
-
-  socket.on("shoot", () => {
-    const p = players[socket.id];
+  socket.on("shoot",()=>{
+    const p=players[socket.id];
     if(!p) return;
-    const now = Date.now();
-    if(now - p.lastShot < p.fireRate) return;
-    bullets.push({
-      x: p.x,
-      y: p.y,
-      angle: p.angle,
-      owner: socket.id,
-      damage: p.damage,
-      life: 120
-    });
-    p.lastShot = now;
+    const now=Date.now();
+    if(now-p.lastShot<p.fireRate) return;
+    bullets.push({x:p.x,y:p.y,angle:p.angle,owner:p.id,damage:p.damage,speed:p.bulletSpeed,life:120});
+    p.lastShot=now;
   });
 
-  socket.on("upgrade", type => {
-    const p = players[socket.id];
-    if(!p || p.upgradePoints <=0) return;
+  socket.on("upgrade",t=>{
+    const p=players[socket.id];
+    if(!p||p.upgradePoints<=0) return;
     p.upgradePoints--;
-    if(type==="speed") p.speed += 0.5;
-    else if(type==="damage") p.damage += 2;
-    else if(type==="hp") { p.maxHp += 20; p.hp += 20; }
+    if(t==="damage") p.damage+=2;
+    if(t==="firerate") p.fireRate=Math.max(120,p.fireRate-40);
+    if(t==="speed") p.speed+=0.4;
+    if(t==="bullet") p.bulletSpeed+=1;
+    if(t==="hp"){p.maxHp+=20;p.hp+=20;}
   });
 
-  socket.on("disconnect", () => { delete players[socket.id]; });
+  socket.on("starter",t=>{
+    const p=players[socket.id];
+    if(!p||p.starterChosen) return;
+    p.starterChosen=true;
+    if(t==="tank"){p.maxHp+=50;p.hp+=50;}
+    if(t==="sniper"){p.damage+=6;p.fireRate+=200;p.bulletSpeed+=4;}
+    if(t==="speed") p.speed+=1.2;
+    if(t==="rapid"){p.fireRate-=120;p.damage-=2;}
+  });
+
+  socket.on("disconnect",()=>delete players[socket.id]);
 });
 
-// ----- Movement -----
-function movePlayer(p){
-  if(!p) return;
-  if(p.inputs.w) p.y -= p.speed;
-  if(p.inputs.s) p.y += p.speed;
-  if(p.inputs.a) p.x -= p.speed;
-  if(p.inputs.d) p.x += p.speed;
-  p.x = Math.max(p.r, Math.min(MAP_WIDTH - p.r, p.x));
-  p.y = Math.max(p.r, Math.min(MAP_HEIGHT - p.r, p.y));
+function levelUp(e){
+  e.level++;
+  e.upgradePoints++;
+  e.xp-=e.xpToLevel;
+  e.xpToLevel=Math.floor(e.xpToLevel*1.5);
 }
 
-// ----- Bots -----
-function moveBots(){
-  const allEntities = Object.values(players).concat(bots);
-  bots.forEach(bot=>{
-    let target=null;
-    let minDist = VISION_DISTANCE;
-    for(const e of allEntities){
-      if(e.id === bot.id) continue;
-      const dist = Math.hypot(bot.x-e.x, bot.y-e.y);
-      if(dist < minDist){ minDist = dist; target = e; }
-    }
+function tick(){
+  Object.values(players).forEach(p=>{
+    if(p.inputs.w) p.y-=p.speed;
+    if(p.inputs.s) p.y+=p.speed;
+    if(p.inputs.a) p.x-=p.speed;
+    if(p.inputs.d) p.x+=p.speed;
+  });
+
+  bots.forEach(b=>{
+    let target=null,dist=VISION;
+    [...bots,...Object.values(players)].forEach(t=>{
+      if(t.id===b.id) return;
+      const d=Math.hypot(b.x-t.x,b.y-t.y);
+      if(d<dist){dist=d;target=t;}
+    });
 
     if(target){
-      const dx = target.x-bot.x, dy = target.y-bot.y;
-      const dist = Math.hypot(dx, dy);
-      if(dist>0){ bot.x += dx/dist*bot.speed; bot.y += dy/dist*bot.speed; bot.angle=Math.atan2(dy,dx);}
-      const now = Date.now();
-      if(now-bot.lastShot > bot.fireRate){
-        bullets.push({ x: bot.x, y: bot.y, angle: bot.angle, owner: bot.id, damage: bot.damage, life:120 });
-        bot.lastShot = now;
+      const dx=target.x-b.x,dy=target.y-b.y,d=Math.hypot(dx,dy)||1;
+      b.x+=dx/d*b.speed;b.y+=dy/d*b.speed;
+      b.angle=Math.atan2(dy,dx);
+      if(Date.now()-b.lastShot>b.fireRate){
+        bullets.push({x:b.x,y:b.y,angle:b.angle,owner:b.id,damage:b.damage,speed:b.bulletSpeed,life:120});
+        b.lastShot=Date.now();
       }
-    } else {
-      if(bot.wanderTime<=0){ bot.wanderDir = Math.random()*Math.PI*2; bot.wanderTime=60+Math.random()*120;}
-      else bot.wanderTime--;
-      bot.x += Math.cos(bot.wanderDir)*bot.speed;
-      bot.y += Math.sin(bot.wanderDir)*bot.speed;
-      bot.x = Math.max(bot.r, Math.min(MAP_WIDTH-bot.r, bot.x));
-      bot.y = Math.max(bot.r, Math.min(MAP_HEIGHT-bot.r, bot.y));
+    }else{
+      if(b.wanderTime<=0){b.wanderDir=Math.random()*Math.PI*2;b.wanderTime=120;}
+      b.wanderTime--;
+      b.x+=Math.cos(b.wanderDir)*b.speed;
+      b.y+=Math.sin(b.wanderDir)*b.speed;
     }
   });
-}
 
-// ----- Bullets & Damage Handling -----
-function moveBullets(){
-  const allEntities = Object.values(players).concat(bots);
   for(let i=bullets.length-1;i>=0;i--){
-    const b = bullets[i];
-    b.x += Math.cos(b.angle)*8;
-    b.y += Math.sin(b.angle)*8;
+    const b=bullets[i];
+    b.x+=Math.cos(b.angle)*b.speed;
+    b.y+=Math.sin(b.angle)*b.speed;
     b.life--;
 
-    for(const t of allEntities){
-      if(t.id === b.owner) continue;
-      if(Math.hypot(b.x-t.x,b.y-t.y) < t.r){
-        t.hp -= b.damage; // subtract damage
-
-        const owner = players[b.owner] || bots.find(bot=>bot.id===b.owner);
-
-        // only respawn if HP <= 0
-        if(t.hp <=0){
-          if(owner){
-            owner.xp += 3;
-            if(owner.xp >= owner.xpToLevel){
-              owner.level++;
-              owner.upgradePoints = (owner.upgradePoints || 0)+1;
-              owner.xp -= owner.xpToLevel;
-              owner.xpToLevel = Math.floor(owner.xpToLevel*1.5);
-            }
-          }
-          t.hp = t.maxHp;
-          t.x = Math.random()*MAP_WIDTH;
-          t.y = Math.random()*MAP_HEIGHT;
+    [...bots,...Object.values(players)].forEach(t=>{
+      if(t.id===b.owner) return;
+      if(Math.hypot(b.x-t.x,b.y-t.y)<t.r){
+        t.hp-=b.damage;
+        const o=players[b.owner]||bots.find(x=>x.id===b.owner);
+        if(o){o.xp+=1;if(o.xp>=o.xpToLevel) levelUp(o);}
+        if(t.hp<=0){
+          if(o){o.xp+=5;if(o.xp>=o.xpToLevel) levelUp(o);}
+          t.hp=t.maxHp;
+          t.x=Math.random()*MAP_W;
+          t.y=Math.random()*MAP_H;
         }
-
         bullets.splice(i,1);
-        break;
       }
-    }
+    });
 
     if(b.life<=0) bullets.splice(i,1);
   }
+
+  io.emit("state",{players,bots,bullets});
 }
 
-// ----- Game Loop -----
-function loop(){
-  Object.values(players).forEach(movePlayer);
-  moveBots();
-  moveBullets();
-  io.emit("state",{players, bullets, bots});
-}
-
-setInterval(loop,1000/60);
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, ()=>console.log("Server running on", PORT));
+setInterval(tick,1000/60);
+server.listen(process.env.PORT||3000);
